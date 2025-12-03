@@ -14,7 +14,7 @@ const CHATWOOT_CONFIG = {
   
   // URLs de los Webhooks de n8n (reemplazar con las URLs de producción de tus workflows)
   N8N_BASE_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook',
-  N8N_INIT_SESSION_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/init-session', // Workflow A
+  N8N_INIT_SESSION_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook-test/webchat/init-session', // Workflow A
   N8N_SEND_MESSAGE_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/send-message', // Workflow B
   N8N_FETCH_MESSAGES_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/fetch-messages', // Workflow C
 };
