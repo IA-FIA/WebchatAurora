@@ -90,3 +90,32 @@ button:focus-visible {
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* === CHATWOOT FULL PAGE === */
+
+/* Oculta launcher / burbuja */
+#chatwoot-launcher,
+.woot-widget-bubble,
+.woot--bubble-holder {
+  display: none !important;
+}
+
+/* Hace que el chat ocupe toda la pantalla */
+iframe#chatwoot_iframe,
+#chatwoot-container,
+#woot-widget-container,
+.woot-widget-holder,
+.woot-widget-holder.open,
+.woot-widget-base,
+.woot-widget-frame {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: translate(0, 0) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
