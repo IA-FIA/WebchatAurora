@@ -12,9 +12,8 @@
 
     <!-- CHATWOOT FULL PAGE -->
     <script>
-      // Ocultar la burbuja / launcher
       window.chatwootSettings = {
-        hideMessageBubble: true,
+        hideMessageBubble: true,  // sin burbuja
       };
 
       (function (d, t) {
@@ -33,7 +32,7 @@
             baseUrl: BASE_URL,
           });
 
-          // Abrir el chat automáticamente cuando esté listo
+          // abrir el chat automáticamente
           window.chatwootSDK.on("ready", function () {
             window.chatwootSDK.toggle("open");
           });
