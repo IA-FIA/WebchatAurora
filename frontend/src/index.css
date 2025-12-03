@@ -26,14 +26,14 @@ a:hover {
   color: #94bb1e;
 }
 
+/* ⚠️ Quitamos el centrado tipo "tarjeta" */
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
 }
 
+/* Si sigues usando h1 / botones en otras vistas, los dejo igual */
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
@@ -81,17 +81,15 @@ button:focus-visible {
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
-
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #569D33; 
   border-radius: 8px;
 }
-
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* === CHATWOOT FULL PAGE === */
+/* ========= CHATWOOT FULL PAGE ========= */
 
 /* Oculta launcher / burbuja */
 #chatwoot-launcher,
@@ -100,12 +98,23 @@ button:focus-visible {
   display: none !important;
 }
 
-/* Hace que el chat ocupe toda la pantalla */
-iframe#chatwoot_iframe,
-#chatwoot-container,
-#woot-widget-container,
+/* Contenedor principal del widget (el que se ve en tu captura) */
+#cw-widget-holder,
 .woot-widget-holder,
-.woot-widget-holder.open,
+.woot-widget-holder.open {
+  position: fixed !important;
+  inset: 0 !important;           /* top:0; right:0; bottom:0; left:0 */
+  width: 100% !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  margin: 0 !important;
+  transform: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Por si usa iframe interno */
+iframe#chatwoot_iframe,
 .woot-widget-base,
 .woot-widget-frame {
   position: fixed !important;
@@ -115,7 +124,4 @@ iframe#chatwoot_iframe,
   max-height: 100vh !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  transform: translate(0, 0) !important;
-  margin: 0 !important;
-  padding: 0 !important;
 }
