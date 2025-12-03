@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage';
-import ChatInput from './components/ChatInput';
-import LoadingDots from './components/LoadingDots';
+import ChatMessage from './components/ChatMessage'; // Componente ya existente
+import ChatInput from './components/ChatInput';     // Componente ya existente
+import LoadingDots from './components/LoadingDots'; // Componente ya existente
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
-// ⚠️ CONFIGURACIÓN PROPORCIONADA POR EL USUARIO (INCLUYE TOKEN INSEGURO)
+// Configuración de la API (Solo IDs) y URLs de los Proxies de n8n
 const CHATWOOT_CONFIG = {
-  BASE_URL: 'https://aurora-chatwoot.zuw8ba.easypanel.host', // Tu URL base de Chatwoot
-  ACCOUNT_ID: '1', // ID de tu cuenta Chatwoot
-  INBOX_ID: '7',     // ID de tu bandeja de entrada de Sitio Web
-  AGENT_TOKEN: 'W9HctG1oxrZ1Dhyi8VXscBpN', // Tu Token de Agente API
+  // IDs de Chatwoot (constantes)
+  ACCOUNT_ID: '1', 
+  INBOX_ID: '7',     
+  
+  // URLs de los Webhooks de n8n (reemplazar con las URLs de producción de tus workflows)
+  N8N_BASE_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook',
+  N8N_INIT_SESSION_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/init-session', // Workflow A
+  N8N_SEND_MESSAGE_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/send-message', // Workflow B
+  N8N_FETCH_MESSAGES_URL: 'https://aurora-n8n.zuw8ba.easypanel.host/webhook/webchat/fetch-messages', // Workflow C
 };
 
 function App() {
@@ -24,14 +29,8 @@ function App() {
   const [sessionId, setSessionId] = useState('');
   const [contactId, setContactId] = useState(null);
   const [conversationId, setConversationId] = useState(null);
-  const [lastMessageId, setLastMessageId] = useState(0); // Para el Polling
+  const [lastMessageId, setLastMessageId] = useState(0); 
   const pollingRef = useRef(null);
-
-  // Headers de la API (Usando el token explícitamente, inseguro)
-  const headers = {
-    'Content-Type': 'application/json',
-    'api_access_token': CHATWOOT_CONFIG.AGENT_TOKEN,
-  };
 
   // Efecto para hacer scroll al final del chat
   useEffect(() => {
@@ -40,7 +39,8 @@ function App() {
     }
   }, [messages]);
 
-  // Lógica de inicio de sesión: Crear Contacto y Conversación
+
+  // Lógica de inicio de sesión: Llama al Proxy de n8n para crear Contacto y Conversación de forma segura
   const setupChatwootSession = async () => {
     if (conversationId) return;
 
@@ -53,56 +53,25 @@ function App() {
     setSessionId(newSessionId);
 
     const identifier = `webchat-${newSessionId}`;
-    let currentContactId = null;
-
+    
     try {
-      // 2. Crear o Identificar Contacto
-      try {
-        // Intenta crear el contacto. Si falla, pasamos al catch para buscarlo.
-        const createContactResponse = await axios.post(
-          `${CHATWOOT_CONFIG.BASE_URL}/api/v1/accounts/${CHATWOOT_CONFIG.ACCOUNT_ID}/contacts`,
-          {
-            inbox_id: CHATWOOT_CONFIG.INBOX_ID,
-            identifier: identifier, 
-            name: `Webchat User ${newSessionId.substring(0, 4)}`,
-          },
-          { headers }
-        );
-        currentContactId = createContactResponse.data.id;
-      } catch (error) {
-        // Si la creación falla (ej: identificador ya existe), lo buscamos
-        const searchResponse = await axios.get(
-          `${CHATWOOT_CONFIG.BASE_URL}/api/v1/accounts/${CHATWOOT_CONFIG.ACCOUNT_ID}/contacts/search`,
-          {
-            headers,
-            params: { identifier: identifier }
-          }
-        );
-        currentContactId = searchResponse.data.payload[0]?.id; 
-      }
-      
-      if (!currentContactId) throw new Error('No se pudo obtener el ID de contacto.');
-      setContactId(currentContactId);
-
-      // 3. Crear Conversación
-      const convResponse = await axios.post(
-        `${CHATWOOT_CONFIG.BASE_URL}/api/v1/accounts/${CHATWOOT_CONFIG.ACCOUNT_ID}/conversations`,
-        {
+      // 2. Llama al Proxy de n8n (/init-session) que maneja las llamadas seguras a Chatwoot API
+      const initResponse = await axios.post(CHATWOOT_CONFIG.N8N_INIT_SESSION_URL, {
+          identifier: identifier,
           inbox_id: CHATWOOT_CONFIG.INBOX_ID,
-          contact_id: currentContactId,
-          status: 'pending' 
-        },
-        { headers }
-      );
+          name: `Webchat User ${newSessionId.substring(0, 4)}`,
+          account_id: CHATWOOT_CONFIG.ACCOUNT_ID
+      });
 
-      setConversationId(convResponse.data.id);
+      // 3. n8n devuelve los IDs de la conversación y el contacto
+      setContactId(initResponse.data.contact_id);
+      setConversationId(initResponse.data.conversation_id);
       
     } catch (error) {
-      console.error('Error setting up Chatwoot session:', error);
-      // Mensaje visible al usuario en caso de error crítico de conexión
+      console.error('Error setting up Chatwoot session via n8n proxy:', error);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Error de conexión: No se pudo iniciar la sesión en Chatwoot. Revisa la configuración de API.'
+        content: 'Error de conexión: No se pudo iniciar la sesión. Verifica los workflows de n8n y la configuración de CORS.'
       }]);
     }
   };
@@ -112,23 +81,29 @@ function App() {
     setupChatwootSession();
   }, []); 
 
-  // Lógica de Polling para recibir mensajes de Aurora
+
+  // Lógica de Polling: Llama al Proxy de n8n para obtener mensajes
   useEffect(() => {
     if (conversationId) {
       if (pollingRef.current) clearInterval(pollingRef.current);
 
       pollingRef.current = setInterval(async () => {
         try {
-          const response = await axios.get(
-            `${CHATWOOT_CONFIG.BASE_URL}/api/v1/accounts/${CHATWOOT_CONFIG.ACCOUNT_ID}/conversations/${conversationId}/messages`,
-            { headers }
-          );
+          // Llama al Proxy de n8n (/fetch-messages)
+          const response = await axios.get(CHATWOOT_CONFIG.N8N_FETCH_MESSAGES_URL, {
+            params: {
+              conversation_id: conversationId,
+              account_id: CHATWOOT_CONFIG.ACCOUNT_ID,
+            }
+          });
 
+          // El proxy devuelve la lista de mensajes de Chatwoot
           const fetchedMessages = response.data.payload.reverse(); 
 
+          // Buscar nuevos mensajes 'outgoing' (respuesta de Aurora)
           const newMessages = fetchedMessages.filter(msg => 
             msg.id > lastMessageId && 
-            msg.message_type === 'outgoing' // Respuesta de Aurora/Agente
+            msg.message_type === 'outgoing' 
           );
 
           if (newMessages.length > 0) {
@@ -141,11 +116,10 @@ function App() {
             ]);
             
             setLastMessageId(newMessages[newMessages.length - 1].id);
-            setIsLoading(false);
+            setIsLoading(false); // Detiene el indicador de carga
           }
         } catch (error) {
-          // Manejar errores de polling silenciosamente, pero registrar
-          // console.error('Error during polling:', error); 
+          // console.error('Error during polling:', error); // Manejar silenciosamente
         }
       }, 2000); 
 
@@ -158,8 +132,10 @@ function App() {
     };
   }, [conversationId, lastMessageId]);
 
+
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
+    // Deshabilita el envío si está cargando, si el input está vacío o si no hay conversationId
     if (isLoading || !input.trim() || !conversationId) return;
 
     const userMessage = input.trim();
@@ -170,22 +146,19 @@ function App() {
     setIsLoading(true);
 
     try {
-      // 4. Enviar el mensaje como 'incoming' a Chatwoot (dispara el n8n webhook)
-      await axios.post(
-        `${CHATWOOT_CONFIG.BASE_URL}/api/v1/accounts/${CHATWOOT_CONFIG.ACCOUNT_ID}/conversations/${conversationId}/messages`,
-        {
-          content: userMessage,
-          message_type: 'incoming', 
-          private: false
-        },
-        { headers }
-      );
+      // 4. Llama al Proxy de n8n (/send-message) que envía el mensaje 'incoming' a Chatwoot
+      await axios.post(CHATWOOT_CONFIG.N8N_SEND_MESSAGE_URL, {
+        content: userMessage,
+        conversation_id: conversationId,
+        account_id: CHATWOOT_CONFIG.ACCOUNT_ID,
+      });
       
+      // La respuesta del agente Aurora se recibirá por el polling
     } catch (error) {
-      console.error('Error sending message to Chatwoot:', error);
+      console.error('Error sending message via n8n proxy:', error);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Lo siento, hubo un error al enviar tu mensaje a Chatwoot.'
+        content: 'Lo siento, hubo un error al procesar tu mensaje.'
       }]);
       setIsLoading(false);
     }
