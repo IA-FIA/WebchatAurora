@@ -11,7 +11,7 @@ const CHATWOOT_CONFIG = {
   BASE_URL: 'https://aurora-chatwoot.zuw8ba.easypanel.host', // Tu URL base de Chatwoot
   ACCOUNT_ID: '1', // ID de tu cuenta Chatwoot
   INBOX_ID: '7',     // ID de tu bandeja de entrada de Sitio Web
-  AGENT_TOKEN: 'URX43bmU3AYCZp4ectkQvHvC', // Tu Token de Agente API
+  AGENT_TOKEN: 'W9HctG1oxrZ1Dhyi8VXscBpN', // Tu Token de Agente API
 };
 
 function App() {
