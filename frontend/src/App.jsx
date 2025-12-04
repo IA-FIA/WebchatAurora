@@ -37,11 +37,11 @@ function App() {
     }
   }, [messages]);
 
+  // Cliente Axios configurado con el token
   const api = axios.create({
     baseURL: CHATWOOT_API_URL,
     headers: {
       'Content-Type': 'application/json',
-      // El token se pasa en el header 'api_access_token' para la API de Chatwoot
       'api_access_token': API_ACCESS_TOKEN, 
     },
   });
@@ -56,7 +56,7 @@ function App() {
 
       if (payload && payload.event === 'message.created') {
         const data = payload.data;
-        // Solo procesamos mensajes de agentes (message_type === 1) o bot (message_type === 3)
+        // Procesamos mensajes de agentes (1) o bot (3)
         if (data.message_type === 1 || data.message_type === 3) {
           
           setMessages(prev => {
@@ -64,7 +64,7 @@ function App() {
             const content = data.content;
             const role = 'assistant'; 
 
-            // Reemplaza el mensaje de carga (el placeholder '') o añade uno nuevo
+            // Reemplaza el placeholder de carga ('') o añade uno nuevo
             if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant' && newMessages[newMessages.length - 1].content === '') {
               newMessages[newMessages.length - 1].content = content;
             } else {
@@ -73,7 +73,6 @@ function App() {
 
             return newMessages;
           });
-          // Detenemos el indicador de carga cuando llega el mensaje
           setIsLoading(false);
         }
       }
@@ -81,6 +80,27 @@ function App() {
       console.error('Error al procesar mensaje WebSocket:', e);
     }
   }, []);
+
+  // Función de creación de conversación, se ejecuta solo en el primer mensaje
+  const createConversationIfNew = async (contactId) => {
+    let convoId = localStorage.getItem('chatwoot_conversation_id');
+
+    if (!convoId) {
+      // Crear una nueva conversación solo si no existe
+      try {
+        const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}/conversations`);
+        convoId = res.data.id;
+        localStorage.setItem('chatwoot_conversation_id', convoId);
+        setConversationId(convoId);
+        return convoId;
+      } catch (error) {
+        console.error('Error al crear conversación:', error);
+        // Lanza el error para que handleSubmit lo maneje y muestre un mensaje al usuario
+        throw new Error('No se pudo crear la conversación en Chatwoot.');
+      }
+    }
+    return convoId;
+  };
 
 
   const initializeChatwoot = useCallback(async () => {
@@ -91,8 +111,10 @@ function App() {
     }
 
     let contactId = localStorage.getItem('chatwoot_contact_id');
-    let convoId = localStorage.getItem('chatwoot_conversation_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
+    
+    // Al iniciar, solo nos aseguramos de tener un contacto y la conexión WS.
+    // La conversación se manejará en handleSubmit (bajo demanda).
 
     try {
       // --- 1. Obtener/Crear Contacto ---
@@ -103,23 +125,17 @@ function App() {
         pubToken = res.data.pubsub_token;
         localStorage.setItem('chatwoot_contact_id', contactId);
         localStorage.setItem('chatwoot_pubsub_token', pubToken);
-        setContactIdentifier(contactId);
-      } else {
-        setContactIdentifier(contactId);
+      } 
+      
+      setContactIdentifier(contactId);
+      
+      // Intentamos recuperar una conversación anterior si existe
+      const convoId = localStorage.getItem('chatwoot_conversation_id');
+      if (convoId) {
+          setConversationId(convoId);
       }
 
-      // --- 2. Crear Conversación ---
-      if (!convoId) {
-        // Creamos una nueva conversación para el contacto
-        const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}/conversations`);
-        convoId = res.data.id;
-        localStorage.setItem('chatwoot_conversation_id', convoId);
-        setConversationId(convoId);
-      } else {
-        setConversationId(convoId);
-      }
-
-      // --- 3. Conexión WebSocket ---
+      // --- 2. Conexión WebSocket (siempre después de tener contacto) ---
       if (pubToken) {
         ws.current = new WebSocket(CHATWOOT_WEBSOCKET_URL);
 
@@ -135,7 +151,6 @@ function App() {
 
         ws.current.onmessage = (event) => {
           const json = JSON.parse(event.data);
-          // Llamar a la función de manejo de mensajes si hay un payload
           if (json.message) {
             handleIncomingMessage(json);
           }
@@ -143,7 +158,6 @@ function App() {
 
         ws.current.onerror = (error) => {
           console.error('WebSocket Error:', error);
-          // Opcional: mostrar un mensaje de error al usuario
         };
 
         ws.current.onclose = () => {
@@ -175,28 +189,41 @@ function App() {
     if (e) e.preventDefault();
 
     const userMessage = input.trim();
-    if (!userMessage || isLoading || !conversationId) return;
+    // Requiere contactIdentifier ya que es lo mínimo para operar
+    if (!userMessage || isLoading || !contactIdentifier) return; 
 
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
     
-    // Añadimos un placeholder para el mensaje del asistente, que se llenará con el WS
+    // Añadimos un placeholder para el mensaje del asistente
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      // --- 4. Enviar Mensaje a Chatwoot API ---
-      await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${conversationId}/messages`, {
+        // --- 1. Crear Conversación si es la primera vez (LAZY CREATION) ---
+        let currentConversationId = conversationId;
+        if (!currentConversationId) {
+            currentConversationId = await createConversationIfNew(contactIdentifier);
+        }
+
+        // Si la conversación sigue siendo nula después de intentar crearla, salimos.
+        if (!currentConversationId) {
+            throw new Error('No se pudo establecer la conversación.');
+        }
+
+      // --- 2. Enviar Mensaje a Chatwoot API ---
+      await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${currentConversationId}/messages`, {
         content: userMessage,
       });
 
       // La respuesta del asistente llegará de forma asíncrona por el WebSocket
 
     } catch (error) {
-      console.error('Error al enviar mensaje a Chatwoot:', error);
+      console.error('Error en handleSubmit:', error);
       // Reemplazamos el placeholder del asistente con un mensaje de error
       setMessages(prev => {
         const newMessages = [...prev];
+        // Aseguramos que el último mensaje sea el de error si estaba vacío
         if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
             newMessages[newMessages.length - 1].content = 'Lo siento, hubo un error al enviar tu mensaje.';
         }
@@ -218,7 +245,7 @@ function App() {
     setInput('');
     setIsLoading(false);
     
-    // Reiniciar el chat (cerrará el viejo WS y abrirá uno nuevo)
+    // Reiniciar la inicialización del chat (cerrará el viejo WS y abrirá uno nuevo)
     initializeChatwoot();
   };
 
@@ -258,12 +285,12 @@ function App() {
             <ChatInput
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={isLoading || !conversationId} 
+              disabled={isLoading || !contactIdentifier} 
               onSend={handleSubmit}
             />
             <button
               type="submit"
-              disabled={isLoading || !input.trim() || !conversationId}
+              disabled={isLoading || !input.trim() || !contactIdentifier}
               className="bg-[#569D33] hover:bg-[#569D44] text-white rounded-lg p-2 disabled:opacity-50"
             >
               <PaperAirplaneIcon className="h-6 w-6" />
