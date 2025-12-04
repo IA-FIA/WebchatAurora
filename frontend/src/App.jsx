@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios'; 
+import axios from 'axios';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import LoadingDots from './components/LoadingDots';
@@ -9,63 +8,71 @@ import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 // --- Configuración de Chatwoot ---
 // La URL de tu instancia de Chatwoot
 const CHATWOOT_BASE_URL = 'https://aurora-chatwoot.zuw8ba.easypanel.host';
-// El identificador alfanumérico de tu canal API (proporcionado por ti)
-const INBOX_IDENTIFIER = 'r9m3gToEJG42pQKknM3oMjrd'; 
+// El identificador alfanumérico de tu canal API (proporcionado por Chatwoot)
+const INBOX_IDENTIFIER = 'r9m3gToEJG42pQKknM3oMjrd';
 // Tu token de acceso (se pasa en un header 'api_access_token')
-const API_ACCESS_TOKEN = 'W9HctG1oxrZ1Dhyi8VXscBpN'; 
+const API_ACCESS_TOKEN = 'W9HctG1oxrZ1Dhyi8VXscBpN';
 
 const CHATWOOT_API_URL = `${CHATWOOT_BASE_URL}/public/api/v1/`;
-// Usamos wss:// para conexiones seguras (HTTPS) con WebSockets (/cable es el path por defecto de ActionCable)
-const CHATWOOT_WEBSOCKET_URL = `wss://aurora-chatwoot.zuw8ba.easypanel.host/cable`; 
-// -----------------------------------------------------------
+// WebSocket seguro para ActionCable
+const CHATWOOT_WEBSOCKET_URL = `wss://aurora-chatwoot.zuw8ba.easypanel.host/cable`;
 
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const chatContainerRef = useRef(null);
-  
+
   // Estados para la sesión de Chatwoot
   const [contactIdentifier, setContactIdentifier] = useState(null);
   const [conversationId, setConversationId] = useState(null);
-  const ws = useRef(null); 
+  const ws = useRef(null);
 
+  // Cliente Axios para la API de Chatwoot
+  const api = axios.create({
+    baseURL: CHATWOOT_API_URL,
+    headers: {
+      'Content-Type': 'application/json',
+      'api_access_token': API_ACCESS_TOKEN,
+    },
+  });
+
+  // Scroll automático hacia abajo cuando llegan mensajes
   useEffect(() => {
-    // Scroll al final al recibir mensajes
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const api = axios.create({
-    baseURL: CHATWOOT_API_URL,
-    headers: {
-      'Content-Type': 'application/json',
-      // El token se pasa en el header 'api_access_token' para la API de Chatwoot
-      'api_access_token': API_ACCESS_TOKEN, 
-    },
-  });
-
   const handleIncomingMessage = useCallback((json) => {
     try {
-      if (json.type === 'ping' || json.type === 'welcome' || json.type === 'confirm_subscription') {
+      if (
+        json.type === 'ping' ||
+        json.type === 'welcome' ||
+        json.type === 'confirm_subscription'
+      ) {
         return;
       }
-      
+
       const payload = json.message;
 
       if (payload && payload.event === 'message.created') {
         const data = payload.data;
-        // Solo procesamos mensajes de agentes (message_type === 1) o bot (message_type === 3)
-        if (data.message_type === 1 || data.message_type === 3) {
-          
-          setMessages(prev => {
-            let newMessages = [...prev];
-            const content = data.content;
-            const role = 'assistant'; 
 
-            // Reemplaza el mensaje de carga (el placeholder '') o añade uno nuevo
-            if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant' && newMessages[newMessages.length - 1].content === '') {
+        // Solo procesamos mensajes de agentes (1) o bot (3)
+        if (data.message_type === 1 || data.message_type === 3) {
+          const content = data.content;
+          const role = 'assistant';
+
+          setMessages((prev) => {
+            let newMessages = [...prev];
+
+            // Si el último mensaje del assistant es un placeholder '', lo reemplazamos
+            if (
+              newMessages.length > 0 &&
+              newMessages[newMessages.length - 1].role === 'assistant' &&
+              newMessages[newMessages.length - 1].content === ''
+            ) {
               newMessages[newMessages.length - 1].content = content;
             } else {
               newMessages = [...newMessages, { role, content }];
@@ -73,7 +80,7 @@ function App() {
 
             return newMessages;
           });
-          // Detenemos el indicador de carga cuando llega el mensaje
+
           setIsLoading(false);
         }
       }
@@ -82,60 +89,55 @@ function App() {
     }
   }, []);
 
-
   const initializeChatwoot = useCallback(async () => {
     // Cerrar la conexión anterior si existe
     if (ws.current) {
-        ws.current.close();
-        ws.current = null;
+      ws.current.close();
+      ws.current = null;
     }
 
     let contactId = localStorage.getItem('chatwoot_contact_id');
-    let convoId = localStorage.getItem('chatwoot_conversation_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
+    let convoId = localStorage.getItem('chatwoot_conversation_id');
 
     try {
-      // --- 1. Obtener/Crear Contacto ---
+      // --- 1. Obtener/Crear contacto ---
       if (!contactId || !pubToken) {
-        // Si no hay contacto, creamos uno nuevo.
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts`);
         contactId = res.data.source_id;
         pubToken = res.data.pubsub_token;
+
         localStorage.setItem('chatwoot_contact_id', contactId);
         localStorage.setItem('chatwoot_pubsub_token', pubToken);
-        setContactIdentifier(contactId);
-      } else {
-        setContactIdentifier(contactId);
       }
 
-      // --- 2. Crear Conversación ---
-      if (!convoId) {
-        // Creamos una nueva conversación para el contacto
-        const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}/conversations`);
-        convoId = res.data.id;
-        localStorage.setItem('chatwoot_conversation_id', convoId);
-        setConversationId(convoId);
-      } else {
+      setContactIdentifier(contactId);
+
+      // Si ya había una conversación guardada (de otra visita), solo la reasignamos
+      if (convoId) {
         setConversationId(convoId);
       }
 
-      // --- 3. Conexión WebSocket ---
+      // --- 2. Conexión WebSocket ---
       if (pubToken) {
         ws.current = new WebSocket(CHATWOOT_WEBSOCKET_URL);
 
         ws.current.onopen = () => {
           console.log('WebSocket conectado. Suscribiendo...');
-          // Suscribirse al canal ActionCable con el token pubsub del contacto
           const identifier = JSON.stringify({
             channel: 'RoomChannel',
             pubsub_token: pubToken,
           });
-          ws.current.send(JSON.stringify({ command: 'subscribe', identifier }));
+          ws.current.send(
+            JSON.stringify({
+              command: 'subscribe',
+              identifier,
+            })
+          );
         };
 
         ws.current.onmessage = (event) => {
           const json = JSON.parse(event.data);
-          // Llamar a la función de manejo de mensajes si hay un payload
           if (json.message) {
             handleIncomingMessage(json);
           }
@@ -143,26 +145,29 @@ function App() {
 
         ws.current.onerror = (error) => {
           console.error('WebSocket Error:', error);
-          // Opcional: mostrar un mensaje de error al usuario
         };
 
         ws.current.onclose = () => {
           console.log('WebSocket cerrado.');
         };
       }
-
     } catch (error) {
       console.error('Error al inicializar Chatwoot:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Lo siento, no pude conectar con el servidor de Chatwoot. Revisa la configuración.' }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            'Lo siento, no pude conectar con el servidor de Chatwoot. Revisa la configuración.',
+        },
+      ]);
       setIsLoading(false);
     }
   }, [api, handleIncomingMessage]);
 
-
   useEffect(() => {
     initializeChatwoot();
-    
-    // Función de limpieza para cerrar el WebSocket al desmontar el componente
+
     return () => {
       if (ws.current) {
         ws.current.close();
@@ -170,35 +175,59 @@ function App() {
     };
   }, [initializeChatwoot]);
 
-
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
 
     const userMessage = input.trim();
-    if (!userMessage || isLoading || !conversationId) return;
+    if (!userMessage || isLoading) return;
+
+    if (!contactIdentifier) {
+      console.error('No hay contactIdentifier aún, espera a que se inicialice Chatwoot');
+      return;
+    }
 
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
-    
-    // Añadimos un placeholder para el mensaje del asistente, que se llenará con el WS
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    // Placeholder para la respuesta del bot
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      // --- 4. Enviar Mensaje a Chatwoot API ---
-      await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${conversationId}/messages`, {
-        content: userMessage,
-      });
+      // Si no hay conversación, la creamos AHORA (primer mensaje del usuario)
+      let activeConversationId = conversationId;
 
-      // La respuesta del asistente llegará de forma asíncrona por el WebSocket
+      if (!activeConversationId) {
+        const convoRes = await api.post(
+          `inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations`
+        );
+        activeConversationId = convoRes.data.id;
+
+        setConversationId(activeConversationId);
+        localStorage.setItem('chatwoot_conversation_id', activeConversationId);
+      }
+
+      // Enviar mensaje a la conversación activa
+      await api.post(
+        `inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${activeConversationId}/messages`,
+        {
+          content: userMessage,
+        }
+      );
+
+      // La respuesta llegará asincrónicamente por WebSocket
 
     } catch (error) {
       console.error('Error al enviar mensaje a Chatwoot:', error);
-      // Reemplazamos el placeholder del asistente con un mensaje de error
-      setMessages(prev => {
+      // Reemplazar placeholder por mensaje de error
+      setMessages((prev) => {
         const newMessages = [...prev];
-        if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
-            newMessages[newMessages.length - 1].content = 'Lo siento, hubo un error al enviar tu mensaje.';
+        if (
+          newMessages.length > 0 &&
+          newMessages[newMessages.length - 1].role === 'assistant' &&
+          newMessages[newMessages.length - 1].content === ''
+        ) {
+          newMessages[newMessages.length - 1].content =
+            'Lo siento, hubo un error al enviar tu mensaje.';
         }
         return newMessages;
       });
@@ -207,7 +236,7 @@ function App() {
   };
 
   const handleReset = () => {
-    // Limpiar localStorage y estados para iniciar un chat completamente nuevo 
+    // Limpiamos todo para iniciar un chat completamente nuevo
     localStorage.removeItem('chatwoot_contact_id');
     localStorage.removeItem('chatwoot_conversation_id');
     localStorage.removeItem('chatwoot_pubsub_token');
@@ -217,17 +246,17 @@ function App() {
     setConversationId(null);
     setInput('');
     setIsLoading(false);
-    
-    // Reiniciar el chat (cerrará el viejo WS y abrirá uno nuevo)
+
+    // Re-inicializar: creará nuevo contacto + WebSocket,
+    // pero la conversación solo se creará cuando el usuario escriba.
     initializeChatwoot();
   };
 
   return (
     <div className="w-screen h-screen flex flex-col bg-white">
       <div className="max-w-6xl w-full mx-auto p-4 flex flex-col h-full">
-
-        {/* Área de chat que ocupa el espacio disponible */}
-        <div 
+        {/* Área de chat */}
+        <div
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto rounded-lg bg-white p-4 custom-scrollbar mb-4 shadow-2xl ring-1 ring-gray-300/70 ring-offset-2 ring-offset-white"
         >
@@ -243,7 +272,7 @@ function App() {
           )}
         </div>
 
-        {/* Controles pegados abajo */}
+        {/* Controles abajo */}
         <div className="flex gap-2">
           <button
             onClick={handleReset}
@@ -258,19 +287,18 @@ function App() {
             <ChatInput
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={isLoading || !conversationId} 
+              disabled={isLoading} // ya no depende de conversationId
               onSend={handleSubmit}
             />
             <button
               type="submit"
-              disabled={isLoading || !input.trim() || !conversationId}
+              disabled={isLoading || !input.trim()} // ya no depende de conversationId
               className="bg-[#569D33] hover:bg-[#569D44] text-white rounded-lg p-2 disabled:opacity-50"
             >
               <PaperAirplaneIcon className="h-6 w-6" />
             </button>
           </form>
         </div>
-
       </div>
     </div>
   );
