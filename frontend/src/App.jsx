@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage.jsx';
-import ChatInput from './components/ChatInput.jsx';
-import LoadingDots from './components/LoadingDots.jsx';
+import ChatMessage from './components/ChatMessage.jsx'; // Usando la extensión explícita
+import ChatInput from './components/ChatInput.jsx';   // Usando la extensión explícita
+import LoadingDots from './components/LoadingDots.jsx'; // Usando la extensión explícita
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 // --- Configuración de Chatwoot ---
@@ -43,7 +43,7 @@ function App() {
 
   // Manejo del efecto de escritura usando el buffer
   useEffect(() => {
-      // SOLO proceder si hay texto en el buffer. Si isLoading es true, la lógica de handleSubmit ya creó el placeholder.
+      // SOLO proceder si hay texto en el buffer.
       if (!typingBuffer) return; 
 
       let index = 0;
