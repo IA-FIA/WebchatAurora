@@ -1,21 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage.jsx'; // Usando la extensión explícita
-import ChatInput from './components/ChatInput.jsx';   // Usando la extensión explícita
-import LoadingDots from './components/LoadingDots.jsx'; // Usando la extensión explícita
+import ChatMessage from './components/ChatMessage';
+import ChatInput from './components/ChatInput';
+import LoadingDots from './components/LoadingDots';
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 // --- Configuración de Chatwoot ---
 // La URL de tu instancia de Chatwoot
 const CHATWOOT_BASE_URL = 'https://aurora-chatwoot.zuw8ba.easypanel.host';
-// El identificador alfanumérico de tu canal API (proporcionado por ti)
+// El identificador alfanumérico de tu canal API
 const INBOX_IDENTIFIER = 'r9m3gToEJG42pQKknM3oMjrd'; 
-// Tu token de acceso (se pasa en un header 'api_access_token')
+// Tu token de acceso
 const API_ACCESS_TOKEN = 'W9HctG1oxrZ1Dhyi8VXscBpN'; 
 
 const CHATWOOT_API_URL = `${CHATWOOT_BASE_URL}/public/api/v1/`;
-// Usamos wss:// para conexiones seguras (HTTPS) con WebSockets (/cable es el path por defecto de ActionCable)
+// Usamos wss:// para conexiones seguras (HTTPS) con WebSockets
 const CHATWOOT_WEBSOCKET_URL = `wss://aurora-chatwoot.zuw8ba.easypanel.host/cable`; 
 // -----------------------------------------------------------
 
@@ -63,7 +63,6 @@ function App() {
                   const lastIndex = newMessages.length - 1;
                   
                   // Reemplazar la última porción del mensaje del asistente (el placeholder creado en handleSubmit)
-                  // Garantizamos que solo modificamos el último mensaje del asistente.
                   if (lastIndex >= 0 && newMessages[lastIndex].role === 'assistant') {
                       newMessages[lastIndex].content = contentChunk;
                   }
@@ -121,7 +120,7 @@ function App() {
           
           // Establecer el mensaje completo en el buffer para iniciar el efecto de escritura
           setTypingBuffer(fullContent);
-          // ⚠️ Importante: setIsLoading se apaga DENTRO del useEffect del typing.
+          // setIsLoading se apaga DENTRO del useEffect del typing.
         }
       }
     } catch (e) {
