@@ -30,9 +30,9 @@ function App() {
   const [conversationId, setConversationId] = useState(null);
   const ws = useRef(null); 
   
-  // NUEVOS ESTADOS/REFS PARA EL STREAMING VISUAL
-  const typingEffectTimeout = useRef(null); // Para controlar el tiempo de escritura
-  const [typingBuffer, setTypingBuffer] = useState(null); // Almacena el mensaje completo del bot
+  // ESTADOS PARA EL STREAMING VISUAL
+  const typingEffectTimeout = useRef(null); 
+  const [typingBuffer, setTypingBuffer] = useState(null); // Almacena el mensaje completo del bot (el texto a escribir)
 
   useEffect(() => {
     // Scroll al final al recibir mensajes
@@ -43,12 +43,12 @@ function App() {
 
   // Manejo del efecto de escritura usando el buffer
   useEffect(() => {
-      // Si no hay mensaje en el buffer, o si ya estamos escribiendo, salir
-      if (!typingBuffer || isLoading) return; 
+      // SOLO proceder si hay texto en el buffer. Si isLoading es true, la lógica de handleSubmit ya creó el placeholder.
+      if (!typingBuffer) return; 
 
       let index = 0;
       
-      // Limpiar cualquier timeout anterior antes de empezar uno nuevo
+      // Limpiar cualquier timeout anterior (es esencial para evitar fugas de memoria y mensajes duplicados)
       if (typingEffectTimeout.current) {
           clearTimeout(typingEffectTimeout.current);
       }
@@ -62,8 +62,8 @@ function App() {
                   let newMessages = [...prev];
                   const lastIndex = newMessages.length - 1;
                   
-                  // Reemplazar la última porción del mensaje del asistente
-                  // Esta lógica es crucial: asegura que actualizamos el último mensaje creado en handleSubmit
+                  // Reemplazar la última porción del mensaje del asistente (el placeholder creado en handleSubmit)
+                  // Garantizamos que solo modificamos el último mensaje del asistente.
                   if (lastIndex >= 0 && newMessages[lastIndex].role === 'assistant') {
                       newMessages[lastIndex].content = contentChunk;
                   }
@@ -77,21 +77,20 @@ function App() {
               // La animación ha terminado:
               // 1. Apagar el estado de carga
               setIsLoading(false);
-              // 2. Limpiar el buffer para permitir el próximo mensaje
+              // 2. Limpiar el buffer para permitir el próximo mensaje y liberar el useEffect
               setTypingBuffer(null); 
           }
       };
 
-      // Iniciar el efecto (se ejecuta cada vez que typingBuffer cambia de null a un string)
+      // Iniciar el efecto (se dispara cada vez que typingBuffer recibe un nuevo string)
       typeMessage();
       
       return () => {
-          // Cleanup: Asegurar que el timeout se detenga si el componente se desmonta
+          // Cleanup: Asegurar que el timeout se detenga si se desmonta o el buffer cambia
           if (typingEffectTimeout.current) {
               clearTimeout(typingEffectTimeout.current);
           }
       };
-      // El efecto depende de typingBuffer. Cuando typingBuffer recibe un string, se dispara.
   }, [typingBuffer]);
 
 
@@ -122,13 +121,12 @@ function App() {
           
           // Establecer el mensaje completo en el buffer para iniciar el efecto de escritura
           setTypingBuffer(fullContent);
-          
-          // Importante: no tocamos setIsLoading aquí. Lo hará el useEffect del typing.
+          // ⚠️ Importante: setIsLoading se apaga DENTRO del useEffect del typing.
         }
       }
     } catch (e) {
       console.error('Error al procesar mensaje WebSocket:', e);
-      setIsLoading(false); // Asegurar que el loading se apague en caso de error de WS
+      setIsLoading(false); 
       setTypingBuffer(null);
     }
   }, []);
