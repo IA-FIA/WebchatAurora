@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage';
-import ChatInput from './components/ChatInput';
-import LoadingDots from './components/LoadingDots';
+import ChatMessage from './components/ChatMessage.jsx';
+import ChatInput from './components/ChatInput.jsx';
+import LoadingDots from './components/LoadingDots.jsx';
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 // --- Configuración de Chatwoot ---
@@ -29,6 +29,10 @@ function App() {
   const [contactIdentifier, setContactIdentifier] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const ws = useRef(null); 
+  
+  // NUEVOS ESTADOS/REFS PARA EL STREAMING VISUAL
+  const typingEffectTimeout = useRef(null); // Para controlar el tiempo de escritura
+  const [typingBuffer, setTypingBuffer] = useState(null); // Almacena el mensaje completo del bot
 
   useEffect(() => {
     // Scroll al final al recibir mensajes
@@ -36,6 +40,60 @@ function App() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Manejo del efecto de escritura usando el buffer
+  useEffect(() => {
+      // Si no hay mensaje en el buffer, o si ya estamos escribiendo, salir
+      if (!typingBuffer || isLoading) return; 
+
+      let index = 0;
+      
+      // Limpiar cualquier timeout anterior antes de empezar uno nuevo
+      if (typingEffectTimeout.current) {
+          clearTimeout(typingEffectTimeout.current);
+      }
+      
+      // Función recursiva para mostrar el texto carácter por carácter
+      const typeMessage = () => {
+          if (index < typingBuffer.length) {
+              const contentChunk = typingBuffer.substring(0, index + 1);
+              
+              setMessages(prev => {
+                  let newMessages = [...prev];
+                  const lastIndex = newMessages.length - 1;
+                  
+                  // Reemplazar la última porción del mensaje del asistente
+                  // Esta lógica es crucial: asegura que actualizamos el último mensaje creado en handleSubmit
+                  if (lastIndex >= 0 && newMessages[lastIndex].role === 'assistant') {
+                      newMessages[lastIndex].content = contentChunk;
+                  }
+                  return newMessages;
+              });
+              
+              index++;
+              // 30ms por carácter para una velocidad de escritura promedio
+              typingEffectTimeout.current = setTimeout(typeMessage, 30); 
+          } else {
+              // La animación ha terminado:
+              // 1. Apagar el estado de carga
+              setIsLoading(false);
+              // 2. Limpiar el buffer para permitir el próximo mensaje
+              setTypingBuffer(null); 
+          }
+      };
+
+      // Iniciar el efecto (se ejecuta cada vez que typingBuffer cambia de null a un string)
+      typeMessage();
+      
+      return () => {
+          // Cleanup: Asegurar que el timeout se detenga si el componente se desmonta
+          if (typingEffectTimeout.current) {
+              clearTimeout(typingEffectTimeout.current);
+          }
+      };
+      // El efecto depende de typingBuffer. Cuando typingBuffer recibe un string, se dispara.
+  }, [typingBuffer]);
+
 
   // Cliente Axios configurado con el token
   const api = axios.create({
@@ -46,6 +104,7 @@ function App() {
     },
   });
 
+  // LÓGICA DE RECEPCIÓN: Solo guarda el mensaje completo en el buffer
   const handleIncomingMessage = useCallback((json) => {
     try {
       if (json.type === 'ping' || json.type === 'welcome' || json.type === 'confirm_subscription') {
@@ -59,25 +118,18 @@ function App() {
         // Procesamos mensajes de agentes (1) o bot (3)
         if (data.message_type === 1 || data.message_type === 3) {
           
-          setMessages(prev => {
-            let newMessages = [...prev];
-            const content = data.content;
-            const role = 'assistant'; 
-
-            // Reemplaza el placeholder de carga ('') o añade uno nuevo
-            if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant' && newMessages[newMessages.length - 1].content === '') {
-              newMessages[newMessages.length - 1].content = content;
-            } else {
-              newMessages = [...newMessages, { role, content }];
-            }
-
-            return newMessages;
-          });
-          setIsLoading(false);
+          const fullContent = data.content;
+          
+          // Establecer el mensaje completo en el buffer para iniciar el efecto de escritura
+          setTypingBuffer(fullContent);
+          
+          // Importante: no tocamos setIsLoading aquí. Lo hará el useEffect del typing.
         }
       }
     } catch (e) {
       console.error('Error al procesar mensaje WebSocket:', e);
+      setIsLoading(false); // Asegurar que el loading se apague en caso de error de WS
+      setTypingBuffer(null);
     }
   }, []);
 
@@ -85,12 +137,6 @@ function App() {
   const createConversationIfNew = async (contactId) => {
     let convoId = localStorage.getItem('chatwoot_conversation_id');
 
-    // **CAMBIO CLAVE AQUÍ: Si hay un convoId guardado, lo usamos, A MENOS QUE VAYAMOS A FORZAR UNA NUEVA.**
-    // Dado que queremos una nueva conversación *por cada sesión de página* (a menos que usemos "Reiniciar chat"),
-    // la lógica es que si el `conversationId` en el estado es `null` (lo cual es cierto al inicio, ver initializeChatwoot), 
-    // SIEMPRE creamos una nueva.
-
-    // Si el estado local (conversationId) es null, creamos una nueva.
     if (!convoId || conversationId === null) { 
       // Crear una nueva conversación
       try {
@@ -104,7 +150,6 @@ function App() {
         throw new Error('No se pudo crear la conversación en Chatwoot.');
       }
     }
-    // Si llegamos aquí, significa que el estado interno ya tenía un conversationId (por una sesión activa)
     return convoId; 
   };
 
@@ -119,14 +164,9 @@ function App() {
     let contactId = localStorage.getItem('chatwoot_contact_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
     
-    // **CAMBIO CLAVE: NO intentamos recuperar la conversación (setConversationId(convoId)) al inicio.**
-    // Si existiera, esto es lo que podría causar el problema de la conversación cerrada/doble creación.
-    // La conversación siempre empezará como NULL, forzando la creación en el primer handleSubmit.
-
     try {
       // --- 1. Obtener/Crear Contacto ---
       if (!contactId || !pubToken) {
-        // Si no hay contacto, creamos uno nuevo.
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts`);
         contactId = res.data.source_id;
         pubToken = res.data.pubsub_token;
@@ -136,8 +176,7 @@ function App() {
       
       setContactIdentifier(contactId);
       
-      // Aseguramos que la conversación siempre empiece como NULL en el estado
-      // Esto fuerza la creación de una nueva conversación al primer mensaje del usuario.
+      // Se reinicia la conversación a null para forzar la creación al primer mensaje
       setConversationId(null);
       localStorage.removeItem('chatwoot_conversation_id');
 
@@ -148,7 +187,6 @@ function App() {
 
         ws.current.onopen = () => {
           console.log('WebSocket conectado. Suscribiendo...');
-          // Suscribirse al canal ActionCable con el token pubsub del contacto
           const identifier = JSON.stringify({
             channel: 'RoomChannel',
             pubsub_token: pubToken,
@@ -181,48 +219,47 @@ function App() {
 
 
   useEffect(() => {
-    // Modificamos este useEffect para que solo se ejecute una vez
-    // Esto asegura que el contacto se mantenga, pero la conversación no.
+    // Inicialización del contacto y websocket
     const hasInitialized = localStorage.getItem('chatwoot_initialized');
     if (!hasInitialized) {
         initializeChatwoot();
-        // Marcamos la inicialización para mantener el contacto, pero forzar nueva conversación
         localStorage.setItem('chatwoot_initialized', 'true'); 
     }
     
-    // Función de limpieza para cerrar el WebSocket al desmontar el componente
+    // Función de limpieza
     return () => {
       if (ws.current) {
         ws.current.close();
       }
+      // Asegurar que el efecto de escritura se detenga al desmontar
+      if (typingEffectTimeout.current) {
+          clearTimeout(typingEffectTimeout.current);
+      }
     };
-  }, [initializeChatwoot]); // Dependencia única para la inicialización
+  }, [initializeChatwoot]); 
 
   
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
 
     const userMessage = input.trim();
-    // Requiere contactIdentifier ya que es lo mínimo para operar
     if (!userMessage || isLoading || !contactIdentifier) return; 
 
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
     
-    // Añadimos un placeholder para el mensaje del asistente
+    // Añadimos el placeholder de mensaje del asistente.
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-        // --- 1. Crear Conversación si es la primera vez (LAZY CREATION) ---
+        // --- 1. Creación de Conversación (bajo demanda) ---
         let currentConversationId = conversationId;
         
-        // El estado conversationId siempre es null al cargar la página (ver initializeChatwoot)
         if (!currentConversationId) {
             currentConversationId = await createConversationIfNew(contactIdentifier);
         }
 
-        // Si la conversación sigue siendo nula después de intentar crearla, salimos.
         if (!currentConversationId) {
             throw new Error('No se pudo establecer la conversación.');
         }
@@ -232,14 +269,13 @@ function App() {
         content: userMessage,
       });
 
-      // La respuesta del asistente llegará de forma asíncrona por el WebSocket
+      // El mensaje del bot llegará por WebSocket y disparará startTypingEffect
 
     } catch (error) {
       console.error('Error en handleSubmit:', error);
-      // Reemplazamos el placeholder del asistente con un mensaje de error
+      // En caso de error, reemplazar el placeholder vacío con un mensaje de error
       setMessages(prev => {
         const newMessages = [...prev];
-        // Aseguramos que el último mensaje sea el de error si estaba vacío
         if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
             newMessages[newMessages.length - 1].content = 'Lo siento, hubo un error al enviar tu mensaje.';
         }
@@ -250,7 +286,7 @@ function App() {
   };
 
   const handleReset = () => {
-    // **CAMBIO CLAVE AQUÍ: También eliminamos la bandera de inicialización para que initializeChatwoot se ejecute al recargar**
+    // Limpiamos los datos de la sesión almacenados en localStorage
     localStorage.removeItem('chatwoot_contact_id');
     localStorage.removeItem('chatwoot_conversation_id');
     localStorage.removeItem('chatwoot_pubsub_token');
