@@ -85,8 +85,14 @@ function App() {
   const createConversationIfNew = async (contactId) => {
     let convoId = localStorage.getItem('chatwoot_conversation_id');
 
-    if (!convoId) {
-      // Crear una nueva conversación solo si no existe
+    // **CAMBIO CLAVE AQUÍ: Si hay un convoId guardado, lo usamos, A MENOS QUE VAYAMOS A FORZAR UNA NUEVA.**
+    // Dado que queremos una nueva conversación *por cada sesión de página* (a menos que usemos "Reiniciar chat"),
+    // la lógica es que si el `conversationId` en el estado es `null` (lo cual es cierto al inicio, ver initializeChatwoot), 
+    // SIEMPRE creamos una nueva.
+
+    // Si el estado local (conversationId) es null, creamos una nueva.
+    if (!convoId || conversationId === null) { 
+      // Crear una nueva conversación
       try {
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}/conversations`);
         convoId = res.data.id;
@@ -95,11 +101,11 @@ function App() {
         return convoId;
       } catch (error) {
         console.error('Error al crear conversación:', error);
-        // Lanza el error para que handleSubmit lo maneje y muestre un mensaje al usuario
         throw new Error('No se pudo crear la conversación en Chatwoot.');
       }
     }
-    return convoId;
+    // Si llegamos aquí, significa que el estado interno ya tenía un conversationId (por una sesión activa)
+    return convoId; 
   };
 
 
@@ -113,8 +119,9 @@ function App() {
     let contactId = localStorage.getItem('chatwoot_contact_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
     
-    // Al iniciar, solo nos aseguramos de tener un contacto y la conexión WS.
-    // La conversación se manejará en handleSubmit (bajo demanda).
+    // **CAMBIO CLAVE: NO intentamos recuperar la conversación (setConversationId(convoId)) al inicio.**
+    // Si existiera, esto es lo que podría causar el problema de la conversación cerrada/doble creación.
+    // La conversación siempre empezará como NULL, forzando la creación en el primer handleSubmit.
 
     try {
       // --- 1. Obtener/Crear Contacto ---
@@ -129,11 +136,11 @@ function App() {
       
       setContactIdentifier(contactId);
       
-      // Intentamos recuperar una conversación anterior si existe
-      const convoId = localStorage.getItem('chatwoot_conversation_id');
-      if (convoId) {
-          setConversationId(convoId);
-      }
+      // Aseguramos que la conversación siempre empiece como NULL en el estado
+      // Esto fuerza la creación de una nueva conversación al primer mensaje del usuario.
+      setConversationId(null);
+      localStorage.removeItem('chatwoot_conversation_id');
+
 
       // --- 2. Conexión WebSocket (siempre después de tener contacto) ---
       if (pubToken) {
@@ -174,7 +181,14 @@ function App() {
 
 
   useEffect(() => {
-    initializeChatwoot();
+    // Modificamos este useEffect para que solo se ejecute una vez
+    // Esto asegura que el contacto se mantenga, pero la conversación no.
+    const hasInitialized = localStorage.getItem('chatwoot_initialized');
+    if (!hasInitialized) {
+        initializeChatwoot();
+        // Marcamos la inicialización para mantener el contacto, pero forzar nueva conversación
+        localStorage.setItem('chatwoot_initialized', 'true'); 
+    }
     
     // Función de limpieza para cerrar el WebSocket al desmontar el componente
     return () => {
@@ -182,9 +196,9 @@ function App() {
         ws.current.close();
       }
     };
-  }, [initializeChatwoot]);
+  }, [initializeChatwoot]); // Dependencia única para la inicialización
 
-
+  
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
 
@@ -202,6 +216,8 @@ function App() {
     try {
         // --- 1. Crear Conversación si es la primera vez (LAZY CREATION) ---
         let currentConversationId = conversationId;
+        
+        // El estado conversationId siempre es null al cargar la página (ver initializeChatwoot)
         if (!currentConversationId) {
             currentConversationId = await createConversationIfNew(contactIdentifier);
         }
@@ -234,10 +250,11 @@ function App() {
   };
 
   const handleReset = () => {
-    // Limpiar localStorage y estados para iniciar un chat completamente nuevo 
+    // **CAMBIO CLAVE AQUÍ: También eliminamos la bandera de inicialización para que initializeChatwoot se ejecute al recargar**
     localStorage.removeItem('chatwoot_contact_id');
     localStorage.removeItem('chatwoot_conversation_id');
     localStorage.removeItem('chatwoot_pubsub_token');
+    localStorage.removeItem('chatwoot_initialized');
 
     setMessages([]);
     setContactIdentifier(null);
