@@ -1,20 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage';
-import ChatInput from './components/ChatInput';
-import LoadingDots from './components/LoadingDots';
+import ChatMessage from './components/ChatMessage.jsx';
+import ChatInput from './components/ChatInput.jsx';
+import LoadingDots from './components/LoadingDots.jsx';
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 // --- Configuración de Chatwoot ---
 // La URL de tu instancia de Chatwoot
-const CHATWOOT_BASE_URL = 'https://aurora-chatwoot.zuw8ba.easypanel.host';
+const CHATWOOT_BASE_BASE_URL = 'https://aurora-chatwoot.zuw8ba.easypanel.host';
 // El identificador alfanumérico de tu canal API (proporcionado por ti)
 const INBOX_IDENTIFIER = 'r9m3gToEJG42pQKknM3oMjrd'; 
 // Tu token de acceso (se pasa en un header 'api_access_token')
 const API_ACCESS_TOKEN = 'W9HctG1oxrZ1Dhyi8VXscBpN'; 
 
-const CHATWOOT_API_URL = `${CHATWOOT_BASE_URL}/public/api/v1/`;
+const CHATWOOT_API_URL = `${CHATWOOT_BASE_BASE_URL}/public/api/v1/`;
 // Usamos wss:// para conexiones seguras (HTTPS) con WebSockets (/cable es el path por defecto de ActionCable)
 const CHATWOOT_WEBSOCKET_URL = `wss://aurora-chatwoot.zuw8ba.easypanel.host/cable`; 
 // -----------------------------------------------------------
@@ -29,6 +29,7 @@ function App() {
   const [contactIdentifier, setContactIdentifier] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const ws = useRef(null); 
+  const typingEffectTimeout = useRef(null); // Nuevo ref para gestionar el tiempo de escritura
 
   useEffect(() => {
     // Scroll al final al recibir mensajes
@@ -59,21 +60,52 @@ function App() {
         // Procesamos mensajes de agentes (1) o bot (3)
         if (data.message_type === 1 || data.message_type === 3) {
           
+          const fullContent = data.content;
+          
+          // Limpiar cualquier timeout anterior
+          if (typingEffectTimeout.current) {
+              clearTimeout(typingEffectTimeout.current);
+          }
+
+          // Función para simular el typing effect (streaming)
+          const typeMessage = (index) => {
+            if (index < fullContent.length) {
+              setMessages(prev => {
+                let newMessages = [...prev];
+                const contentChunk = fullContent.substring(0, index + 1);
+
+                // Reemplazamos el placeholder o la porción anterior
+                if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+                  newMessages[newMessages.length - 1].content = contentChunk;
+                } else {
+                  newMessages = [...newMessages, { role: 'assistant', content: contentChunk }];
+                }
+                return newMessages;
+              });
+              
+              // Programar el siguiente carácter (ajusta el tiempo: 20ms es rápido)
+              typingEffectTimeout.current = setTimeout(() => typeMessage(index + 1), 20);
+            } else {
+              // Cuando termina, detenemos el loading
+              setIsLoading(false);
+            }
+          };
+
+          // Inicializar o reemplazar el mensaje placeholder y comenzar la escritura
           setMessages(prev => {
             let newMessages = [...prev];
-            const content = data.content;
-            const role = 'assistant'; 
-
-            // Reemplaza el placeholder de carga ('') o añade uno nuevo
-            if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant' && newMessages[newMessages.length - 1].content === '') {
-              newMessages[newMessages.length - 1].content = content;
+            // Si el último mensaje es el placeholder de carga, lo reemplazamos por el inicio del texto
+            if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
+                // No hacemos nada, el typeMessage lo manejará desde el índice 0
             } else {
-              newMessages = [...newMessages, { role, content }];
+                // Si no hay placeholder, añadimos el inicio del mensaje
+                newMessages.push({ role: 'assistant', content: '' });
             }
-
             return newMessages;
           });
-          setIsLoading(false);
+          
+          // Comenzar el efecto de escritura desde el índice 0
+          typeMessage(0); 
         }
       }
     } catch (e) {
@@ -84,11 +116,6 @@ function App() {
   // Función de creación de conversación, se ejecuta solo en el primer mensaje
   const createConversationIfNew = async (contactId) => {
     let convoId = localStorage.getItem('chatwoot_conversation_id');
-
-    // **CAMBIO CLAVE AQUÍ: Si hay un convoId guardado, lo usamos, A MENOS QUE VAYAMOS A FORZAR UNA NUEVA.**
-    // Dado que queremos una nueva conversación *por cada sesión de página* (a menos que usemos "Reiniciar chat"),
-    // la lógica es que si el `conversationId` en el estado es `null` (lo cual es cierto al inicio, ver initializeChatwoot), 
-    // SIEMPRE creamos una nueva.
 
     // Si el estado local (conversationId) es null, creamos una nueva.
     if (!convoId || conversationId === null) { 
@@ -104,7 +131,6 @@ function App() {
         throw new Error('No se pudo crear la conversación en Chatwoot.');
       }
     }
-    // Si llegamos aquí, significa que el estado interno ya tenía un conversationId (por una sesión activa)
     return convoId; 
   };
 
@@ -119,9 +145,7 @@ function App() {
     let contactId = localStorage.getItem('chatwoot_contact_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
     
-    // **CAMBIO CLAVE: NO intentamos recuperar la conversación (setConversationId(convoId)) al inicio.**
-    // Si existiera, esto es lo que podría causar el problema de la conversación cerrada/doble creación.
-    // La conversación siempre empezará como NULL, forzando la creación en el primer handleSubmit.
+    // Al iniciar, solo nos aseguramos de tener un contacto y la conexión WS.
 
     try {
       // --- 1. Obtener/Crear Contacto ---
@@ -182,7 +206,6 @@ function App() {
 
   useEffect(() => {
     // Modificamos este useEffect para que solo se ejecute una vez
-    // Esto asegura que el contacto se mantenga, pero la conversación no.
     const hasInitialized = localStorage.getItem('chatwoot_initialized');
     if (!hasInitialized) {
         initializeChatwoot();
@@ -195,8 +218,12 @@ function App() {
       if (ws.current) {
         ws.current.close();
       }
+      // Limpiar también el timeout de escritura si existe
+      if (typingEffectTimeout.current) {
+          clearTimeout(typingEffectTimeout.current);
+      }
     };
-  }, [initializeChatwoot]); // Dependencia única para la inicialización
+  }, [initializeChatwoot]); 
 
   
   const handleSubmit = async (e) => {
@@ -217,7 +244,7 @@ function App() {
         // --- 1. Crear Conversación si es la primera vez (LAZY CREATION) ---
         let currentConversationId = conversationId;
         
-        // El estado conversationId siempre es null al cargar la página (ver initializeChatwoot)
+        // El estado conversationId es null al cargar la página (creación bajo demanda)
         if (!currentConversationId) {
             currentConversationId = await createConversationIfNew(contactIdentifier);
         }
