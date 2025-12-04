@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios'; 
-import ChatMessage from './components/ChatMessage.jsx';
-import ChatInput from './components/ChatInput.jsx';
-import LoadingDots from './components/LoadingDots.jsx';
+import ChatMessage from './components/ChatMessage';
+import ChatInput from './components/ChatInput';
+import LoadingDots from './components/LoadingDots';
 import { PaperAirplaneIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 // --- Configuración de Chatwoot ---
@@ -29,7 +29,6 @@ function App() {
   const [contactIdentifier, setContactIdentifier] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const ws = useRef(null); 
-  const typingEffectTimeout = useRef(null); // Para controlar el efecto de escritura
 
   useEffect(() => {
     // Scroll al final al recibir mensajes
@@ -47,49 +46,6 @@ function App() {
     },
   });
 
-  // LÓGICA DE STREAMING VISUAL
-  const startTypingEffect = useCallback((fullContent) => {
-    let index = 0;
-    
-    // Limpiar cualquier timeout anterior
-    if (typingEffectTimeout.current) {
-        clearTimeout(typingEffectTimeout.current);
-    }
-    
-    // Función recursiva para mostrar el texto carácter por carácter
-    const typeMessage = () => {
-      if (index < fullContent.length) {
-        const contentChunk = fullContent.substring(0, index + 1);
-        
-        setMessages(prev => {
-          let newMessages = [...prev];
-          const lastIndex = newMessages.length - 1;
-          
-          // Reemplazar la última porción del mensaje del asistente
-          if (lastIndex >= 0 && newMessages[lastIndex].role === 'assistant') {
-            newMessages[lastIndex].content = contentChunk;
-          } else {
-            // Esto no debería suceder si handleSubmit crea el placeholder
-            newMessages.push({ role: 'assistant', content: contentChunk });
-          }
-          return newMessages;
-        });
-        
-        index++;
-        // 30ms por carácter para una velocidad de escritura promedio
-        typingEffectTimeout.current = setTimeout(typeMessage, 30); 
-      } else {
-        // La animación ha terminado, apagar el estado de carga
-        setIsLoading(false);
-      }
-    };
-
-    // Comenzar el efecto
-    typeMessage();
-
-  }, []);
-
-
   const handleIncomingMessage = useCallback((json) => {
     try {
       if (json.type === 'ping' || json.type === 'welcome' || json.type === 'confirm_subscription') {
@@ -103,26 +59,34 @@ function App() {
         // Procesamos mensajes de agentes (1) o bot (3)
         if (data.message_type === 1 || data.message_type === 3) {
           
-          const fullContent = data.content;
-          
-          // ⚠️ IMPORTANTE: No apagamos isLoading aquí. Lo hará startTypingEffect.
-          
-          // Iniciar el efecto de escritura con el contenido completo
-          startTypingEffect(fullContent);
+          setMessages(prev => {
+            let newMessages = [...prev];
+            const content = data.content;
+            const role = 'assistant'; 
+
+            // Reemplaza el placeholder de carga ('') o añade uno nuevo
+            if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant' && newMessages[newMessages.length - 1].content === '') {
+              newMessages[newMessages.length - 1].content = content;
+            } else {
+              newMessages = [...newMessages, { role, content }];
+            }
+
+            return newMessages;
+          });
+          setIsLoading(false);
         }
       }
     } catch (e) {
       console.error('Error al procesar mensaje WebSocket:', e);
-      setIsLoading(false); // Asegurar que el loading se apague en caso de error de WS
     }
-  }, [startTypingEffect]);
+  }, []);
 
   // Función de creación de conversación, se ejecuta solo en el primer mensaje
   const createConversationIfNew = async (contactId) => {
     let convoId = localStorage.getItem('chatwoot_conversation_id');
 
-    if (!convoId || conversationId === null) { 
-      // Crear una nueva conversación
+    if (!convoId) {
+      // Crear una nueva conversación solo si no existe
       try {
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}/conversations`);
         convoId = res.data.id;
@@ -131,10 +95,11 @@ function App() {
         return convoId;
       } catch (error) {
         console.error('Error al crear conversación:', error);
+        // Lanza el error para que handleSubmit lo maneje y muestre un mensaje al usuario
         throw new Error('No se pudo crear la conversación en Chatwoot.');
       }
     }
-    return convoId; 
+    return convoId;
   };
 
 
@@ -148,9 +113,13 @@ function App() {
     let contactId = localStorage.getItem('chatwoot_contact_id');
     let pubToken = localStorage.getItem('chatwoot_pubsub_token');
     
+    // Al iniciar, solo nos aseguramos de tener un contacto y la conexión WS.
+    // La conversación se manejará en handleSubmit (bajo demanda).
+
     try {
       // --- 1. Obtener/Crear Contacto ---
       if (!contactId || !pubToken) {
+        // Si no hay contacto, creamos uno nuevo.
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts`);
         contactId = res.data.source_id;
         pubToken = res.data.pubsub_token;
@@ -160,10 +129,11 @@ function App() {
       
       setContactIdentifier(contactId);
       
-      // Se reinicia la conversación a null para forzar la creación al primer mensaje
-      setConversationId(null);
-      localStorage.removeItem('chatwoot_conversation_id');
-
+      // Intentamos recuperar una conversación anterior si existe
+      const convoId = localStorage.getItem('chatwoot_conversation_id');
+      if (convoId) {
+          setConversationId(convoId);
+      }
 
       // --- 2. Conexión WebSocket (siempre después de tener contacto) ---
       if (pubToken) {
@@ -171,6 +141,7 @@ function App() {
 
         ws.current.onopen = () => {
           console.log('WebSocket conectado. Suscribiendo...');
+          // Suscribirse al canal ActionCable con el token pubsub del contacto
           const identifier = JSON.stringify({
             channel: 'RoomChannel',
             pubsub_token: pubToken,
@@ -203,47 +174,39 @@ function App() {
 
 
   useEffect(() => {
-    // Inicialización del contacto y websocket
-    const hasInitialized = localStorage.getItem('chatwoot_initialized');
-    if (!hasInitialized) {
-        initializeChatwoot();
-        localStorage.setItem('chatwoot_initialized', 'true'); 
-    }
+    initializeChatwoot();
     
-    // Función de limpieza
+    // Función de limpieza para cerrar el WebSocket al desmontar el componente
     return () => {
       if (ws.current) {
         ws.current.close();
       }
-      // Asegurar que el efecto de escritura se detenga al desmontar
-      if (typingEffectTimeout.current) {
-          clearTimeout(typingEffectTimeout.current);
-      }
     };
-  }, [initializeChatwoot]); 
+  }, [initializeChatwoot]);
 
-  
+
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
 
     const userMessage = input.trim();
+    // Requiere contactIdentifier ya que es lo mínimo para operar
     if (!userMessage || isLoading || !contactIdentifier) return; 
 
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
     
-    // Añadimos el placeholder de mensaje del asistente.
+    // Añadimos un placeholder para el mensaje del asistente
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-        // --- 1. Creación de Conversación (bajo demanda) ---
+        // --- 1. Crear Conversación si es la primera vez (LAZY CREATION) ---
         let currentConversationId = conversationId;
-        
         if (!currentConversationId) {
             currentConversationId = await createConversationIfNew(contactIdentifier);
         }
 
+        // Si la conversación sigue siendo nula después de intentar crearla, salimos.
         if (!currentConversationId) {
             throw new Error('No se pudo establecer la conversación.');
         }
@@ -253,13 +216,14 @@ function App() {
         content: userMessage,
       });
 
-      // El mensaje del bot llegará por WebSocket y disparará startTypingEffect
+      // La respuesta del asistente llegará de forma asíncrona por el WebSocket
 
     } catch (error) {
       console.error('Error en handleSubmit:', error);
-      // En caso de error, reemplazar el placeholder vacío con un mensaje de error
+      // Reemplazamos el placeholder del asistente con un mensaje de error
       setMessages(prev => {
         const newMessages = [...prev];
+        // Aseguramos que el último mensaje sea el de error si estaba vacío
         if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
             newMessages[newMessages.length - 1].content = 'Lo siento, hubo un error al enviar tu mensaje.';
         }
@@ -270,11 +234,10 @@ function App() {
   };
 
   const handleReset = () => {
-    // Limpiamos los datos de la sesión almacenados en localStorage
+    // Limpiar localStorage y estados para iniciar un chat completamente nuevo 
     localStorage.removeItem('chatwoot_contact_id');
     localStorage.removeItem('chatwoot_conversation_id');
     localStorage.removeItem('chatwoot_pubsub_token');
-    localStorage.removeItem('chatwoot_initialized');
 
     setMessages([]);
     setContactIdentifier(null);
