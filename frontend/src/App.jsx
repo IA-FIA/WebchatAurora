@@ -45,15 +45,8 @@ function App() {
       if (payload && payload.event === 'message.created') {
         const data = payload.data;
         if (data.message_type === 1 || data.message_type === 3) {
-          setMessages((prev) => {
-            let newMessages = [...prev];
-            if (newMessages.length > 0 && newMessages[newMessages.length - 1].content === '') {
-              newMessages[newMessages.length - 1].content = data.content;
-            } else {
-              newMessages.push({ role: 'assistant', content: data.content });
-            }
-            return newMessages;
-          });
+          // Agregamos el mensaje nuevo directamente
+          setMessages((prev) => [...prev, { role: 'assistant', content: data.content }]);
           setIsLoading(false);
         }
       }
@@ -93,23 +86,28 @@ function App() {
   }, [initializeChatwoot]);
 
   const handleSubmit = async () => {
-    if (!input.trim() || !contactIdentifier || isLoading) return;
-    const msg = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: msg }, { role: 'assistant', content: '' }]);
-    setIsLoading(true);
+  if (!input.trim() || !contactIdentifier || isLoading) return;
+  const msg = input.trim();
+  setInput('');
+  
+  // 1. Solo agregamos el mensaje del usuario
+  setMessages(prev => [...prev, { role: 'user', content: msg }]);
+  setIsLoading(true);
 
-    try {
-      let cId = conversationId;
-      if (!cId) {
-        const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations`);
-        cId = res.data.id;
-        setConversationId(cId);
-        localStorage.setItem('chatwoot_conversation_id', cId);
-      }
-      await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${cId}/messages`, { content: msg });
-    } catch (e) { setIsLoading(false); }
-  };
+  try {
+    let cId = conversationId;
+    if (!cId) {
+      const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations`);
+      cId = res.data.id;
+      setConversationId(cId);
+      localStorage.setItem('chatwoot_conversation_id', cId);
+    }
+    await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactIdentifier}/conversations/${cId}/messages`, { content: msg });
+  } catch (e) { 
+    setIsLoading(false); 
+    console.error("Error al enviar:", e);
+  }
+};
 
   const handleSendAudio = async (file) => {
     if (!contactIdentifier) return;
@@ -146,14 +144,18 @@ function App() {
         <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl bg-white p-6 md:p-10 custom-scrollbar mb-4 shadow-2xl ring-1 ring-gray-200 relative">
           <div className="mt-4">
             {messages.map((m, i) => (
-              <ChatMessage key={i} message={m} animate={i === messages.length - 1 && m.role === 'assistant'} />
+              m.content !== '' && (
+                <ChatMessage key={i} message={m} animate={i === messages.length - 1 && m.role === 'assistant'} />
+              )
             ))}
           </div>
           {isLoading && (
-            <div className="flex gap-6 mb-8 animate-fade-in-up">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
-                <LoadingDots />
+            <div className="flex items-center gap-4 mb-8 ml-2 animate-fade-in-up">
+              {/* Mini logo opcional al lado de los puntos para mantener el contexto */}
+              <div className="w-6 h-6 rounded-lg overflow-hidden opacity-50 grayscale">
+                <img src="/f-ia.png" alt="pensando" className="w-full h-full object-cover" />
               </div>
+              <LoadingDots />
             </div>
           )}
           <div className="h-28"></div>
