@@ -1,43 +1,13 @@
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ClipboardDocumentIcon, ClipboardDocumentCheckIcon } from "@heroicons/react/24/solid";
 
-function ChatMessage({ message }) {
-  const [copied, setCopied] = useState(false);
-
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy text: ", err);
-    }
-  };
-
+function ChatMessage({ message, animate }) {
   if (message.role === "user") {
-    // Mensaje del usuario: burbuja verde a la derecha
     return (
-      <div className="flex justify-end mb-4 items-start">
-        <div className="relative rounded-lg px-4 py-2 max-w-[80%] bg-[#569D44] text-white">
-          <div className="prose prose-invert max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ node, ...props }) => (
-                  <a
-                    {...props}
-                    className="text-blue-200 hover:text-blue-100 underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                ),
-                strong: ({ node, ...props }) => (
-                  <strong {...props} className="font-bold" />
-                ),
-              }}
-            >
+      <div className="flex justify-end group mb-8">
+        <div className="max-w-[80%] bg-[#569D44] text-white px-6 py-4 rounded-2xl rounded-br-sm shadow-md">
+          <div className="prose prose-invert max-w-none text-sm font-medium leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
             </ReactMarkdown>
           </div>
@@ -46,44 +16,36 @@ function ChatMessage({ message }) {
     );
   }
 
-  // Mensaje del asistente: bloque centrado, texto negro, sin burbuja
   return (
-    <div className="flex justify-center mb-4 items-start w-full">
-      <div className="w-full max-w-4xl mx-auto relative pr-12"> {/* pr-12 agrega espacio a la derecha */}
-        <div className="prose max-w-none text-black">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ node, ...props }) => (
-                <a
-                  {...props}
-                  className="text-[#94bb1e] hover:text-[#569D33] underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-              ),
-              strong: ({ node, ...props }) => (
-                <strong {...props} className="font-bold" />
-              ),
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+    <section className={`group mb-10 ${animate ? 'animate-fade-in-up opacity-0' : ''}`}>
+      <div className="flex gap-4 md:gap-6">
+        
+        {/* Foto de perfil F-IA */}
+        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm mt-1 overflow-hidden border border-gray-100">
+          <img src="/f-ia.png" alt="F-IA Logo" className="w-full h-full object-cover" />
         </div>
-        {/* Botón de copiar*/}
-        <button
-          onClick={copyToClipboard}
-          className="absolute top-2 -right-2 p-0 bg-transparent border-none shadow-none hover:bg-transparent focus:bg-transparent"
-          title="Copiar respuesta"
-        >
-          {copied ? (
-            <ClipboardDocumentCheckIcon className="h-5 w-5 text-[#569D33]" />
-          ) : (
-            <ClipboardDocumentIcon className="h-5 w-5 text-[#569D33]" />
-          )}
-        </button>
+
+        <div className="flex-1">
+          <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_12px_32px_-4px_rgba(25,28,29,0.06)] border border-gray-100/50">
+            <div className="prose max-w-none text-gray-700 text-sm leading-relaxed marker:text-[#569D33]">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ node, ...props }) => <a {...props} className="text-[#569D33] hover:text-[#94bb1e] underline font-medium" target="_blank" rel="noopener noreferrer" />,
+                  strong: ({ node, ...props }) => <strong {...props} className="font-semibold text-gray-900" />,
+                  h3: ({ node, ...props }) => <h3 {...props} className="text-xl font-bold tracking-tight mb-4 flex items-center gap-2 text-gray-800" />,
+                  blockquote: ({ node, ...props }) => <blockquote {...props} className="border-l-4 border-[#569D33] bg-gray-50 pl-4 py-3 italic text-gray-600 rounded-r-lg my-4" />,
+                  ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 space-y-2 my-4" />,
+                  ol: ({ node, ...props }) => <ol {...props} className="list-decimal pl-5 space-y-2 my-4" />
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
