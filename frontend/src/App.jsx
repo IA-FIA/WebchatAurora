@@ -141,7 +141,7 @@ function App() {
   return (
     <div className="w-screen h-screen flex flex-col bg-[#F8F9FA] font-sans">
       <div className="max-w-5xl w-full mx-auto p-4 flex flex-col h-full relative">
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl bg-white p-6 md:p-10 custom-scrollbar mb-4 shadow-2xl ring-1 ring-gray-200 relative">
+        <div ref={chatContainerRef} className="flex-1 overflow-y-auto rounded-2xl bg-white p-6 md:p-10 custom-scrollbar shadow-2xl ring-1 ring-gray-200 relative">
           <div className="mt-4">
             {messages.map((m, i) => (
               m.content !== '' && (
@@ -158,7 +158,7 @@ function App() {
               <LoadingDots />
             </div>
           )}
-          <div className="h-28"></div>
+          <div className="h-12"></div>
         </div>
         <div className="absolute bottom-8 left-8 right-8 z-30">
           <ChatInput value={input} onChange={(e)=>setInput(e.target.value)} disabled={isLoading} onSend={handleSubmit} onReset={handleReset} onSendAudio={handleSendAudio} />
