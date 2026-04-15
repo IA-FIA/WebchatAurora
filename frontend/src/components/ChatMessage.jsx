@@ -3,18 +3,20 @@ import remarkGfm from "remark-gfm";
 
 function ChatMessage({ message, animate }) {
   if (message.role === "user") {
-    return (
-      <div className="flex justify-end group mb-8">
-        <div className="max-w-[80%] bg-[#569D44] text-white px-6 py-4 rounded-2xl rounded-br-sm shadow-md">
-          <div className="prose prose-invert max-w-none text-sm font-medium leading-relaxed">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
+  return (
+    <div className="flex justify-end group mb-8">
+      {/* Añadimos text-white aquí para forzar el color blanco */}
+      <div className="max-w-[80%] bg-[#569D44] text-white px-6 py-4 rounded-2xl rounded-br-sm shadow-md">
+        {/* Eliminamos prose-invert si quieres control total, o añadimos text-white al div interno */}
+        <div className="prose max-w-none text-sm font-medium leading-relaxed text-white">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   return (
     <section className={`group mb-10 ${animate ? 'animate-fade-in-up opacity-0' : ''}`}>
