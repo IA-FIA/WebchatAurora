@@ -60,9 +60,23 @@ function App() {
 
     try {
       if (!contactId || !pubToken) {
+        // 1. Creamos el contacto
         const res = await api.post(`inboxes/${INBOX_IDENTIFIER}/contacts`);
         contactId = res.data.source_id;
         pubToken = res.data.pubsub_token;
+        
+        // Obtenemos el ID correlativo de la base de datos de Chatwoot
+        const internalId = res.data.id; 
+
+        // 2. Actualizamos inmediatamente el nombre usando el endpoint PATCH
+        try {
+          await api.patch(`inboxes/${INBOX_IDENTIFIER}/contacts/${contactId}`, {
+            name: `webchat-${internalId}`
+          });
+        } catch (patchError) {
+          console.error("Error al actualizar el nombre del contacto:", patchError);
+        }
+
         localStorage.setItem('chatwoot_contact_id', contactId);
         localStorage.setItem('chatwoot_pubsub_token', pubToken);
       }
@@ -77,7 +91,7 @@ function App() {
         };
         ws.current.onmessage = (e) => handleIncomingMessage(JSON.parse(e.data));
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Error inicializando Chatwoot:", e); }
   }, [api, handleIncomingMessage]);
 
   useEffect(() => {
