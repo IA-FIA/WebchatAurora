@@ -23,10 +23,10 @@ function ChatMessage({ message, animate }) {
       <div className="flex gap-4 md:gap-6">
         
         {/* Foto de perfil F-IA */}
-        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm mt-1 overflow-hidden border border-gray-100">
-          <img src="/f-ia.png" alt="F-IA Logo" className="w-full h-full object-cover" />
-        </div>
-
+        {/* Foto de perfil F-IA */}
+          <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm mt-1 border border-gray-100 p-1">
+            <img src="/f-ia.png" alt="F-IA Logo" className="w-full h-full object-contain" />
+          </div>
         <div className="flex-1">
           <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_12px_32px_-4px_rgba(25,28,29,0.06)] border border-gray-100/50">
             <div className="prose max-w-none text-gray-700 text-sm leading-relaxed marker:text-[#569D33]">

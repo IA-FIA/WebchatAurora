@@ -151,9 +151,13 @@ function App() {
           </div>
           {isLoading && (
             <div className="flex items-center gap-4 mb-8 ml-2 animate-fade-in-up">
-              {/* Mini logo opcional al lado de los puntos para mantener el contexto */}
-              <div className="w-6 h-6 rounded-lg overflow-hidden opacity-50 grayscale">
-                <img src="/f-ia.png" alt="pensando" className="w-full h-full object-cover" />
+              <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-gray-100 shadow-sm shrink-0 p-1">
+                <img 
+                  src="/f-ia.png" 
+                  alt="F-IA pensando" 
+                  className="w-full h-full object-contain" 
+                  onError={(e) => e.target.style.display = 'none'}
+                />
               </div>
               <LoadingDots />
             </div>
